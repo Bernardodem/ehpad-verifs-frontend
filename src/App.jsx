@@ -3,7 +3,6 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
 import DashboardPage from './pages/DashboardPage';
 import ExecutionPage from './pages/ExecutionPage';
-import AdminVerifsPage from './pages/AdminVerifsPage';
 
 export default function App() {
   return (
@@ -13,7 +12,6 @@ export default function App() {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/execution/:id" element={<ExecutionPage />} />
-          <Route path="/admin" element={<AdminVerifsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api';
 import toast from 'react-hot-toast';
-import { CheckCircle2, Clock, AlertTriangle, Settings, LogOut } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, LogOut, Plus, Edit2, Trash2, X, Printer, Mail, Download } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const STATUT_CONFIG = {
   a_faire: { label: 'À faire', color: 'bg-gray-100 text-gray-600', icon: Clock },
@@ -12,21 +14,256 @@ const STATUT_CONFIG = {
   manquee: { label: 'Manquée', color: 'bg-red-100 text-red-700', icon: AlertTriangle },
 };
 
-export default function DashboardPage() {
-  const { user, isAdmin } = useAuth();
-  const navigate = useNavigate();
-  const [executions, setExecutions] = useState([]);
-  const [loading, setLoading] = useState(true);
+const PERIODICITES = [
+  { value: 'quotidien', label: 'Quotidien' },
+  { value: 'hebdomadaire', label: 'Hebdomadaire' },
+  { value: 'mensuel', label: 'Mensuel' },
+  { value: 'a_la_demande', label: 'À la demande' },
+];
 
-  const load = () => {
-    setLoading(true);
-    api.get('/executions/du-jour')
-      .then(({ data }) => setExecutions(data))
-      .catch(() => toast.error('Erreur de chargement'))
-      .finally(() => setLoading(false));
+const TYPES_ITEM = [
+  { value: 'binaire', label: 'Oui / Non' },
+  { value: 'quantite', label: 'Quantité (seuil)' },
+  { value: 'temperature', label: 'Température (plage)' },
+  { value: 'peremption', label: 'Date de péremption' },
+];
+
+function ModeleModal({ existing, metiers, onClose, onSaved }) {
+  const [form, setForm] = useState(existing ? {
+    nom: existing.nom, description: existing.description || '', periodicite: existing.periodicite,
+    metier_responsable_id: existing.metier_responsable_id || '', heure_limite: existing.heure_limite || ''
+  } : { nom: '', description: '', periodicite: 'quotidien', metier_responsable_id: '', heure_limite: '' });
+  const [items, setItems] = useState(existing?.items || []);
+  const [metiersAlerte, setMetiersAlerte] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const addItem = () => setItems(p => [...p, { libelle: '', type: 'binaire', seuil_min: '', temperature_min: '', temperature_max: '', emplacement: '' }]);
+  const updateItem = (idx, field, value) => setItems(p => p.map((it, i) => i === idx ? { ...it, [field]: value } : it));
+  const removeItem = async (idx) => {
+    const item = items[idx];
+    if (item.id) {
+      try { await api.delete(`/modeles/items/${item.id}`); } catch { toast.error('Erreur suppression point'); return; }
+    }
+    setItems(p => p.filter((_, i) => i !== idx));
   };
 
-  useEffect(() => { load(); }, []);
+  const save = async () => {
+    if (!form.nom) { toast.error('Nom requis'); return; }
+    if (!existing && items.length === 0) { toast.error('Ajoutez au moins un point à vérifier'); return; }
+    setLoading(true);
+    try {
+      if (existing) {
+        await api.patch(`/modeles/${existing.id}`, form);
+        for (const item of items) {
+          if (!item.id) {
+            await api.post(`/modeles/${existing.id}/items`, item);
+          }
+        }
+      } else {
+        await api.post('/modeles', { ...form, items, metiers_alerte: metiersAlerte });
+      }
+      toast.success(existing ? 'Vérification modifiée' : 'Vérification créée');
+      onSaved();
+      onClose();
+    } catch (err) { toast.error(err.response?.data?.error || 'Erreur'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="font-bold text-gray-900">{existing ? 'Modifier' : 'Nouvelle'} vérification</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+        </div>
+
+        <div className="space-y-4 mb-6">
+          <div>
+            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Nom</label>
+            <input className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={form.nom} onChange={e => setForm(p => ({...p, nom: e.target.value}))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Périodicité</label>
+              <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={form.periodicite} onChange={e => setForm(p => ({...p, periodicite: e.target.value}))}>
+                {PERIODICITES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Heure limite</label>
+              <input type="time" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={form.heure_limite} onChange={e => setForm(p => ({...p, heure_limite: e.target.value}))} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Métier responsable</label>
+            <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" value={form.metier_responsable_id} onChange={e => setForm(p => ({...p, metier_responsable_id: e.target.value}))}>
+              <option value="">— Aucun —</option>
+              {metiers.map(m => <option key={m.id} value={m.id}>{m.nom}</option>)}
+            </select>
+          </div>
+          {!existing && (
+            <div>
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Alerter en cas de retard</label>
+              <div className="flex flex-wrap gap-2">
+                {metiers.map(m => (
+                  <label key={m.id} className={`text-xs px-3 py-1.5 rounded-full cursor-pointer border ${metiersAlerte.includes(m.id) ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
+                    <input type="checkbox" className="hidden" checked={metiersAlerte.includes(m.id)} onChange={e => setMetiersAlerte(p => e.target.checked ? [...p, m.id] : p.filter(id => id !== m.id))} />
+                    {m.nom}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-gray-100 pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Points à vérifier</p>
+            <button onClick={addItem} className="text-xs px-3 py-1.5 rounded-lg text-white flex items-center gap-1" style={{ background: '#4A2C2A' }}>
+              <Plus size={14} /> Ajouter
+            </button>
+          </div>
+          <div className="space-y-3">
+            {items.map((item, idx) => (
+              <div key={idx} className="bg-gray-50 rounded-lg p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input className="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm" placeholder="Libellé" value={item.libelle} onChange={e => updateItem(idx, 'libelle', e.target.value)} disabled={!!item.id} />
+                  <button onClick={() => removeItem(idx)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={14} /></button>
+                </div>
+                {!item.id && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs" value={item.type} onChange={e => updateItem(idx, 'type', e.target.value)}>
+                        {TYPES_ITEM.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      </select>
+                      <input className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Emplacement" value={item.emplacement} onChange={e => updateItem(idx, 'emplacement', e.target.value)} />
+                    </div>
+                    {item.type === 'quantite' && (
+                      <input type="number" className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Seuil minimum" value={item.seuil_min} onChange={e => updateItem(idx, 'seuil_min', e.target.value)} />
+                    )}
+                    {item.type === 'temperature' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="number" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Temp. min °C" value={item.temperature_min} onChange={e => updateItem(idx, 'temperature_min', e.target.value)} />
+                        <input type="number" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Temp. max °C" value={item.temperature_max} onChange={e => updateItem(idx, 'temperature_max', e.target.value)} />
+                      </div>
+                    )}
+                  </>
+                )}
+                {item.id && <p className="text-xs text-gray-400">Type: {TYPES_ITEM.find(t => t.value === item.type)?.label}</p>}
+              </div>
+            ))}
+            {items.length === 0 && <p className="text-sm text-gray-400 text-center py-4">Aucun point ajouté</p>}
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-6">
+          <button onClick={save} disabled={loading} className="px-4 py-2 rounded-lg text-white text-sm font-medium" style={{ background: '#4A2C2A' }}>
+            {loading ? 'Enregistrement...' : existing ? 'Enregistrer' : 'Créer'}
+          </button>
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm border border-gray-300 text-gray-600">Annuler</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function DashboardPage() {
+  const { user, isManager, isAdmin } = useAuth();
+  const navigate = useNavigate();
+  const [tab, setTab] = useState('aujourdhui');
+  const [executions, setExecutions] = useState([]);
+  const [modeles, setModeles] = useState([]);
+  const [metiers, setMetiers] = useState([]);
+  const [historique, setHistorique] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modalModele, setModalModele] = useState(null);
+  const [showNew, setShowNew] = useState(false);
+  const [filtreModeles, setFiltreModeles] = useState([]);
+  const [filtreDateDebut, setFiltreDateDebut] = useState('');
+  const [filtreDateFin, setFiltreDateFin] = useState('');
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailDest, setEmailDest] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
+
+  const loadAujourdhui = () => {
+    api.get('/executions/du-jour').then(({ data }) => setExecutions(data)).catch(() => toast.error('Erreur'));
+  };
+
+  const loadModeles = async () => {
+    try {
+      const [m, met] = await Promise.all([
+        api.get('/modeles'),
+        fetch('/sso/api/apps/metiers/all', { headers: { Authorization: `Bearer ${localStorage.getItem('sso_token')}` } }).then(r => r.json())
+      ]);
+      setModeles(m.data);
+      setMetiers(met);
+    } catch { toast.error('Erreur de chargement'); }
+  };
+
+  const loadHistorique = () => {
+    const params = new URLSearchParams();
+    if (filtreModeles.length > 0) params.set('modele_ids', filtreModeles.join(','));
+    if (filtreDateDebut) params.set('date_debut', filtreDateDebut);
+    if (filtreDateFin) params.set('date_fin', filtreDateFin);
+    api.get(`/executions/historique/all?${params.toString()}`).then(({ data }) => setHistorique(data)).catch(() => toast.error('Erreur'));
+    if (modeles.length === 0) loadModeles();
+  };
+
+  useEffect(() => {
+    setLoading(true);
+    if (tab === 'aujourdhui') loadAujourdhui();
+    if (tab === 'verifications') loadModeles();
+    if (tab === 'historique') loadHistorique();
+    setLoading(false);
+  }, [tab, filtreModeles, filtreDateDebut, filtreDateFin]);
+
+  const genererPdf = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Historique des verifications - Mes Verifs', 14, 15);
+    doc.setFontSize(10);
+    doc.setTextColor(120);
+    doc.text(`Genere le ${new Date().toLocaleDateString('fr-FR')}`, 14, 22);
+    autoTable(doc, {
+      startY: 28,
+      head: [['Verification', 'Date', 'Non-conformites']],
+      body: historique.map(h => [h.modele_nom, new Date(h.date_prevue).toLocaleDateString('fr-FR'), h.non_conformites]),
+      headStyles: { fillColor: [74, 44, 42] },
+    });
+    return doc;
+  };
+
+  const telechargerPdf = () => {
+    const doc = genererPdf();
+    doc.save(`historique-verifs-${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const envoyerParEmail = async () => {
+    if (!emailDest) { toast.error('Adresse email requise'); return; }
+    setSendingEmail(true);
+    try {
+      const doc = genererPdf();
+      const pdfBase64 = doc.output('datauristring').split(',')[1];
+      await api.post('/historique/email', {
+        destinataire: emailDest,
+        pdf_base64: pdfBase64,
+        titre: 'Historique des verifications - Mes Verifs'
+      });
+      toast.success('Email envoye');
+      setShowEmailModal(false);
+      setEmailDest('');
+    } catch (err) { toast.error(err.response?.data?.error || 'Erreur envoi'); }
+    finally { setSendingEmail(false); }
+  };
+
+  const supprimerModele = async (id, nom) => {
+    if (!window.confirm(`Supprimer "${nom}" ? Cette action est irreversible.`)) return;
+    try {
+      await api.delete(`/modeles/${id}`);
+      toast.success('Vérification supprimée');
+      loadModeles();
+    } catch (err) { toast.error(err.response?.data?.error || 'Erreur'); }
+  };
 
   const isLate = (exec) => {
     if (!exec.heure_limite || exec.statut === 'terminee') return false;
@@ -40,43 +277,50 @@ export default function DashboardPage() {
   const enAttente = executions.filter(e => e.statut !== 'terminee');
   const terminees = executions.filter(e => e.statut === 'terminee');
 
+  const tabs = [
+    { id: 'aujourdhui', label: "Aujourd'hui" },
+    ...(isManager() ? [{ id: 'verifications', label: 'Vérifications' }] : []),
+    ...(isManager() ? [{ id: 'historique', label: 'Historique' }] : []),
+  ];
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      <header className="sticky top-0 z-10 shadow-md" style={{ background: 'linear-gradient(135deg, #3A2020, #4A2C2A)' }}>
+      <header className="sticky top-0 z-10 shadow-md print:hidden" style={{ background: 'linear-gradient(135deg, #3A2020, #4A2C2A)' }}>
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-xl">✅</span>
             <span className="text-white font-bold text-sm">Mes Vérifs</span>
           </div>
-          <div className="flex items-center gap-2">
-            {isAdmin() && (
-              <button onClick={() => navigate('/admin')} className="p-2 rounded-lg text-white hover:bg-white/10">
-                <Settings size={18} />
-              </button>
-            )}
-            <a href="/" className="p-2 rounded-lg text-white hover:bg-white/10 inline-flex">
-              <LogOut size={18} />
-            </a>
-          </div>
+          <a href="/" className="p-2 rounded-lg text-white hover:bg-white/10 inline-flex">
+            <LogOut size={18} />
+          </a>
         </div>
       </header>
 
-      <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-4">
-        <div className="mb-4">
-          <h1 className="text-lg font-bold text-gray-900">Aujourd'hui</h1>
-          <p className="text-sm text-gray-400">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+      {tabs.length > 1 && (
+        <div className="max-w-2xl w-full mx-auto px-4 pt-4 print:hidden">
+          <div className="flex gap-1 bg-white rounded-xl p-1 shadow-sm border border-gray-100">
+            {tabs.map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${tab === t.id ? 'text-white' : 'text-gray-500'}`}
+                style={tab === t.id ? { background: '#4A2C2A' } : {}}>
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
+      )}
 
-        {loading ? (
-          <div className="text-center py-16 text-gray-400">Chargement...</div>
-        ) : (
+      <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-4">
+        {tab === 'aujourdhui' && (
           <>
+            <div className="mb-4">
+              <h1 className="text-lg font-bold text-gray-900">Aujourd'hui</h1>
+              <p className="text-sm text-gray-400">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+            </div>
             {enAttente.length === 0 && terminees.length === 0 && (
-              <div className="bg-white rounded-xl p-8 text-center text-gray-400">
-                <p>Aucune vérification prévue aujourd'hui</p>
-              </div>
+              <div className="bg-white rounded-xl p-8 text-center text-gray-400"><p>Aucune vérification prévue aujourd'hui</p></div>
             )}
-
             {enAttente.length > 0 && (
               <div className="space-y-3 mb-6">
                 {enAttente.map(exec => {
@@ -84,16 +328,10 @@ export default function DashboardPage() {
                   const config = late ? { label: 'En retard', color: 'bg-red-100 text-red-700', icon: AlertTriangle } : STATUT_CONFIG[exec.statut];
                   const Icon = config.icon;
                   return (
-                    <button
-                      key={exec.id}
-                      onClick={() => navigate(`/execution/${exec.id}`)}
-                      className="w-full bg-white rounded-xl p-4 text-left shadow-sm border-2 border-transparent hover:border-yellow-600 transition-all flex items-center justify-between"
-                    >
+                    <button key={exec.id} onClick={() => navigate(`/execution/${exec.id}`)} className="w-full bg-white rounded-xl p-4 text-left shadow-sm border-2 border-transparent hover:border-yellow-600 transition-all flex items-center justify-between">
                       <div>
                         <p className="font-semibold text-gray-900">{exec.modele_nom}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">
-                          {exec.heure_limite ? `À faire avant ${exec.heure_limite}` : 'À faire'}
-                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">{exec.heure_limite ? `À faire avant ${exec.heure_limite}` : 'À faire'}</p>
                       </div>
                       <span className={`text-xs px-3 py-1.5 rounded-full font-medium flex items-center gap-1 ${config.color}`}>
                         <Icon size={13} /> {config.label}
@@ -103,7 +341,6 @@ export default function DashboardPage() {
                 })}
               </div>
             )}
-
             {terminees.length > 0 && (
               <div>
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Terminées</p>
@@ -119,7 +356,125 @@ export default function DashboardPage() {
             )}
           </>
         )}
+
+        {tab === 'verifications' && (
+          <>
+            <div className="flex justify-end mb-4">
+              <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium" style={{ background: '#4A2C2A' }}>
+                <Plus size={16} /> Nouvelle vérification
+              </button>
+            </div>
+            <div className="space-y-3">
+              {modeles.map(m => (
+                <div key={m.id} className="bg-white rounded-xl p-4 shadow-sm flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-gray-900">{m.nom}</p>
+                    <p className="text-xs text-gray-400 mt-1 capitalize">{m.periodicite.replace('_', ' ')} {m.heure_limite && `· avant ${m.heure_limite}`}</p>
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={async () => { const { data } = await api.get(`/modeles/${m.id}`); setModalModele(data); }} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500"><Edit2 size={15} /></button>
+                    {isAdmin() && <button onClick={() => supprimerModele(m.id, m.nom)} className="p-1.5 hover:bg-red-50 rounded-lg text-red-500"><Trash2 size={15} /></button>}
+                  </div>
+                </div>
+              ))}
+              {modeles.length === 0 && <div className="bg-white rounded-xl p-8 text-center text-gray-400">Aucune vérification configurée</div>}
+            </div>
+          </>
+        )}
+
+        {tab === 'historique' && (
+          <>
+            <div className="flex justify-between items-center mb-4 print:hidden flex-wrap gap-2">
+              <h1 className="text-lg font-bold text-gray-900">Historique</h1>
+              <div className="flex gap-2">
+                <button onClick={() => window.print()} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border border-gray-300 text-gray-600">
+                  <Printer size={15} /> Imprimer
+                </button>
+                <button onClick={telechargerPdf} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border border-gray-300 text-gray-600">
+                  <Download size={15} /> Telecharger PDF
+                </button>
+                <button onClick={() => setShowEmailModal(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-white" style={{ background: '#4A2C2A' }}>
+                  <Mail size={15} /> Envoyer par email
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-4 mb-4 shadow-sm print:hidden space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Vérifications</label>
+                <div className="flex flex-wrap gap-2">
+                  {modeles.map(m => (
+                    <label key={m.id} className={`text-xs px-3 py-1.5 rounded-full cursor-pointer border ${filtreModeles.includes(m.id) ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-gray-50 border-gray-200 text-gray-500'}`}>
+                      <input type="checkbox" className="hidden" checked={filtreModeles.includes(m.id)} onChange={e => setFiltreModeles(p => e.target.checked ? [...p, m.id] : p.filter(id => id !== m.id))} />
+                      {m.nom}
+                    </label>
+                  ))}
+                  {modeles.length === 0 && <span className="text-xs text-gray-400">Chargement...</span>}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Depuis le</label>
+                  <input type="date" className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm" value={filtreDateDebut} onChange={e => setFiltreDateDebut(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Jusqu'au</label>
+                  <input type="date" className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm" value={filtreDateFin} onChange={e => setFiltreDateFin(e.target.value)} />
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600">Vérification</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600">Date</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-600">Non-conformités</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historique.map(h => (
+                    <tr key={h.id} className="border-b border-gray-50">
+                      <td className="px-4 py-3 text-gray-900">{h.modele_nom}</td>
+                      <td className="px-4 py-3 text-gray-500">{new Date(h.date_prevue).toLocaleDateString('fr-FR')}</td>
+                      <td className="px-4 py-3">
+                        {parseInt(h.non_conformites) > 0 ? (
+                          <span className="text-red-600 font-medium">{h.non_conformites}</span>
+                        ) : (
+                          <span className="text-green-600">0</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {historique.length === 0 && <div className="p-8 text-center text-gray-400">Aucune vérification terminée</div>}
+            </div>
+          </>
+        )}
       </main>
+
+      {showNew && <ModeleModal metiers={metiers} onClose={() => setShowNew(false)} onSaved={loadModeles} />}
+      {modalModele && <ModeleModal existing={modalModele} metiers={metiers} onClose={() => setModalModele(null)} onSaved={loadModeles} />}
+
+      {showEmailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-gray-900">Envoyer par email</h2>
+              <button onClick={() => setShowEmailModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+            </div>
+            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Adresse email</label>
+            <input type="email" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-4" placeholder="destinataire@exemple.fr" value={emailDest} onChange={e => setEmailDest(e.target.value)} />
+            <div className="flex gap-2">
+              <button onClick={envoyerParEmail} disabled={sendingEmail} className="px-4 py-2 rounded-lg text-white text-sm font-medium" style={{ background: '#4A2C2A' }}>
+                {sendingEmail ? 'Envoi...' : 'Envoyer'}
+              </button>
+              <button onClick={() => setShowEmailModal(false)} className="px-4 py-2 rounded-lg text-sm border border-gray-300 text-gray-600">Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
