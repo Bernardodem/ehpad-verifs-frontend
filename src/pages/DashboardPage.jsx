@@ -21,11 +21,12 @@ const PERIODICITES = [
   { value: 'a_la_demande', label: 'À la demande' },
 ];
 
-const TYPES_ITEM = [
+const CHECKS_DISPONIBLES = [
   { value: 'binaire', label: 'Oui / Non' },
   { value: 'quantite', label: 'Quantité (seuil)' },
   { value: 'temperature', label: 'Température (plage)' },
   { value: 'peremption', label: 'Date de péremption' },
+  { value: 'numero', label: 'Numéro / Référence' },
 ];
 
 function ModeleModal({ existing, metiers, onClose, onSaved }) {
@@ -37,7 +38,7 @@ function ModeleModal({ existing, metiers, onClose, onSaved }) {
   const [metiersAlerte, setMetiersAlerte] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const addItem = () => setItems(p => [...p, { libelle: '', type: 'binaire', seuil_min: '', temperature_min: '', temperature_max: '', emplacement: '' }]);
+  const addItem = () => setItems(p => [...p, { libelle: '', checks: ['binaire'], seuil_min: '', temperature_min: '', temperature_max: '', emplacement: '' }]);
   const updateItem = (idx, field, value) => setItems(p => p.map((it, i) => i === idx ? { ...it, [field]: value } : it));
   const removeItem = async (idx) => {
     const item = items[idx];
@@ -132,16 +133,28 @@ function ModeleModal({ existing, metiers, onClose, onSaved }) {
                 </div>
                 {!item.id && (
                   <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <select className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs" value={item.type} onChange={e => updateItem(idx, 'type', e.target.value)}>
-                        {TYPES_ITEM.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                      </select>
-                      <input className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Emplacement" value={item.emplacement} onChange={e => updateItem(idx, 'emplacement', e.target.value)} />
+                    <input className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Emplacement" value={item.emplacement} onChange={e => updateItem(idx, 'emplacement', e.target.value)} />
+                    <div className="flex flex-wrap gap-1.5">
+                      {CHECKS_DISPONIBLES.map(c => (
+                        <label key={c.value} className={`text-xs px-2 py-1 rounded-full cursor-pointer border ${(item.checks || []).includes(c.value) ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-white border-gray-200 text-gray-500'}`}>
+                          <input
+                            type="checkbox"
+                            className="hidden"
+                            checked={(item.checks || []).includes(c.value)}
+                            onChange={e => {
+                              const current = item.checks || [];
+                              const next = e.target.checked ? [...current, c.value] : current.filter(v => v !== c.value);
+                              updateItem(idx, 'checks', next.length > 0 ? next : ['binaire']);
+                            }}
+                          />
+                          {c.label}
+                        </label>
+                      ))}
                     </div>
-                    {item.type === 'quantite' && (
+                    {(item.checks || []).includes('quantite') && (
                       <input type="number" className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Seuil minimum" value={item.seuil_min} onChange={e => updateItem(idx, 'seuil_min', e.target.value)} />
                     )}
-                    {item.type === 'temperature' && (
+                    {(item.checks || []).includes('temperature') && (
                       <div className="grid grid-cols-2 gap-2">
                         <input type="number" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Temp. min °C" value={item.temperature_min} onChange={e => updateItem(idx, 'temperature_min', e.target.value)} />
                         <input type="number" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Temp. max °C" value={item.temperature_max} onChange={e => updateItem(idx, 'temperature_max', e.target.value)} />
@@ -149,7 +162,7 @@ function ModeleModal({ existing, metiers, onClose, onSaved }) {
                     )}
                   </>
                 )}
-                {item.id && <p className="text-xs text-gray-400">Type: {TYPES_ITEM.find(t => t.value === item.type)?.label}</p>}
+                {item.id && <p className="text-xs text-gray-400">{(item.checks || []).map(c => CHECKS_DISPONIBLES.find(x => x.value === c)?.label).join(' · ')}</p>}
               </div>
             ))}
             {items.length === 0 && <p className="text-sm text-gray-400 text-center py-4">Aucun point ajouté</p>}
