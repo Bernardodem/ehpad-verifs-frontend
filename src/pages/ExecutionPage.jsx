@@ -1,8 +1,9 @@
+import UserMenu from '../components/UserMenu';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Check, X, Camera, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Check, X, Camera, CheckCircle2, Home, LogOut } from 'lucide-react';
 
 function ItemCard({ item, resultat, onSave }) {
   const checks = item.checks || ['binaire'];
@@ -188,22 +189,28 @@ export default function ExecutionPage() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <header className="sticky top-0 z-10 shadow-md" style={{ background: 'linear-gradient(135deg, #3A2020, #4A2C2A)' }}>
-        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
+        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
           <button onClick={() => navigate('/')} className="text-white p-2 hover:bg-white/10 rounded-lg">
             <ArrowLeft size={18} />
           </button>
-          <span className="text-white font-bold text-sm">{execution.modele_nom}</span>
+          <span className="text-white font-bold text-sm flex-1">{execution.modele_nom}</span>
+          <a href="/" className="p-2 rounded-lg text-white hover:bg-white/10 inline-flex" title="Retour portail" className="p-2 rounded-lg text-white hover:bg-white/10 inline-flex items-center gap-1 text-xs font-medium">
+            <Home size={15} /> Portail
+          </a>
+          <button onClick={() => { localStorage.removeItem('sso_token'); localStorage.removeItem('sso_user'); localStorage.removeItem('sso_apps'); window.location.href = '/'; }} className="p-2 rounded-lg text-white hover:bg-white/10" title="Déconnexion" className="p-2 rounded-lg text-white hover:bg-white/10 flex items-center gap-1 text-xs font-medium">
+            <LogOut size={15} /> Se déconnecter
+          </button>
         </div>
       </header>
 
-      <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-4 space-y-3 pb-24">
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-4 space-y-3 pb-24">
         {execution.items.map(item => (
           <ItemCard key={item.id} item={item} resultat={item.resultat} onSave={(values, photo) => saveItem(item.id, values, photo)} />
         ))}
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-5xl mx-auto">
           <button
             onClick={terminer}
             disabled={!tousRemplis}

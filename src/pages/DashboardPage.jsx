@@ -1,9 +1,10 @@
+import UserMenu from '../components/UserMenu';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api';
 import toast from 'react-hot-toast';
-import { CheckCircle2, Clock, AlertTriangle, LogOut, Plus, Edit2, Trash2, X, Printer, Mail, Download } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, LogOut, Plus, Edit2, Trash2, X, Printer, Mail, Download, Home } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -298,33 +299,33 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      <header className="sticky top-0 z-10 shadow-md print:hidden" style={{ background: 'linear-gradient(135deg, #3A2020, #4A2C2A)' }}>
-        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">✅</span>
-            <span className="text-white font-bold text-sm">Mes Vérifs</span>
-          </div>
-          <a href="/" className="p-2 rounded-lg text-white hover:bg-white/10 inline-flex">
-            <LogOut size={18} />
-          </a>
-        </div>
-      </header>
-
-      {tabs.length > 1 && (
-        <div className="max-w-2xl w-full mx-auto px-4 pt-4 print:hidden">
-          <div className="flex gap-1 bg-white rounded-xl p-1 shadow-sm border border-gray-100">
-            {tabs.map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)}
-                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${tab === t.id ? 'text-white' : 'text-gray-500'}`}
-                style={tab === t.id ? { background: '#4A2C2A' } : {}}>
-                {t.label}
-              </button>
-            ))}
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 pt-4 pb-4">
+        <div className="rounded-2xl px-5 py-4 mb-4 text-white print:hidden" style={{ background: 'linear-gradient(135deg, #3A2020, #5C3A37)' }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <img src="https://monaec.fr/logo-aec.jpg" alt="Arc en Ciel" className="h-12 rounded-lg" />
+              <div>
+                <h1 className="text-base font-bold">Mes Vérifs</h1>
+                <p className="text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>Résidence Arc en Ciel</p>
+              </div>
+            </div>
+            <UserMenu user={user} onLogout={() => { localStorage.removeItem('sso_token'); localStorage.removeItem('sso_user'); localStorage.removeItem('sso_apps'); window.location.href = '/'; }} />
           </div>
         </div>
-      )}
 
-      <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-4">
+        {tabs.length > 1 && (
+          <div className="mb-4 print:hidden">
+            <div className="flex gap-1 bg-white rounded-xl p-1 shadow-sm border border-gray-100">
+              {tabs.map(t => (
+                <button key={t.id} onClick={() => setTab(t.id)}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${tab === t.id ? 'text-white' : 'text-gray-500'}`}
+                  style={tab === t.id ? { background: '#4A2C2A' } : {}}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {tab === 'aujourdhui' && (
           <>
             <div className="mb-4">
