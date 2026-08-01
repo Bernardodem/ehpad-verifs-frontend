@@ -24,6 +24,13 @@ export function AuthProvider({ children }) {
 
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.exp * 1000 < Date.now()) {
+        localStorage.removeItem('sso_token');
+        localStorage.removeItem('sso_user');
+        localStorage.removeItem('sso_apps');
+        window.location.href = '/';
+        return;
+      }
       setUser(payload);
     } catch {
       window.location.href = '/';
