@@ -1,4 +1,5 @@
 import UserMenu from '../components/UserMenu';
+import Footer from '../components/Footer';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -494,6 +495,7 @@ export default function DashboardPage() {
           </>
         )}
       </main>
+      <Footer appSource="Mes Vérifs" />
 
       {showNew && <ModeleModal metiers={metiers} onClose={() => setShowNew(false)} onSaved={loadModeles} />}
       {modalModele && <ModeleModal existing={modalModele} metiers={metiers} onClose={() => setModalModele(null)} onSaved={loadModeles} />}
