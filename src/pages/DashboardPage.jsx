@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api';
 import toast from 'react-hot-toast';
-import { CheckCircle2, Clock, AlertTriangle, LogOut, Plus, Edit2, Trash2, X, Printer, Mail, Download, Home } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, LogOut, Plus, Edit2, Trash2, X, Printer, Mail, Download, Home, Copy } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -37,7 +37,7 @@ function ModeleModal({ existing, metiers, onClose, onSaved }) {
     metier_responsable_id: existing.metier_responsable_id || '', heure_limite: existing.heure_limite || ''
   } : { nom: '', description: '', periodicite: 'quotidien', metier_responsable_id: '', heure_limite: '' });
   const [items, setItems] = useState(existing?.items || []);
-  const [metiersAlerte, setMetiersAlerte] = useState([]);
+  const [metiersAlerte, setMetiersAlerte] = useState(existing?.metiers_alerte?.map(m => m.metier_id || m) || []);
   const [loading, setLoading] = useState(false);
 
   const addItem = () => setItems(p => [...p, { libelle: '', checks: ['binaire'], seuil_min: '', temperature_min: '', temperature_max: '', emplacement: '' }]);
@@ -56,10 +56,16 @@ function ModeleModal({ existing, metiers, onClose, onSaved }) {
     setLoading(true);
     try {
       if (existing) {
-        await api.patch(`/modeles/${existing.id}`, form);
+        await api.patch(`/modeles/${existing.id}`, { ...form, metiers_alerte: metiersAlerte });
         for (const item of items) {
           if (!item.id) {
             await api.post(`/modeles/${existing.id}/items`, item);
+          } else {
+            await api.patch(`/modeles/items/${item.id}`, {
+              temperature_min: item.temperature_min,
+              temperature_max: item.temperature_max,
+              seuil_min: item.seuil_min,
+            });
           }
         }
       } else {
@@ -104,8 +110,7 @@ function ModeleModal({ existing, metiers, onClose, onSaved }) {
               {metiers.map(m => <option key={m.id} value={m.id}>{m.nom}</option>)}
             </select>
           </div>
-          {!existing && (
-            <div>
+          <div>
               <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Alerter en cas de retard</label>
               <div className="flex flex-wrap gap-2">
                 {metiers.map(m => (
@@ -116,7 +121,6 @@ function ModeleModal({ existing, metiers, onClose, onSaved }) {
                 ))}
               </div>
             </div>
-          )}
         </div>
 
         <div className="border-t border-gray-100 pt-4">
@@ -164,7 +168,20 @@ function ModeleModal({ existing, metiers, onClose, onSaved }) {
                     )}
                   </>
                 )}
-                {item.id && <p className="text-xs text-gray-400">{(item.checks || []).map(c => CHECKS_DISPONIBLES.find(x => x.value === c)?.label).join(' · ')}</p>}
+                {item.id && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-gray-400">{(item.checks || []).map(c => CHECKS_DISPONIBLES.find(x => x.value === c)?.label).join(' · ')}</p>
+                    {(item.checks || []).includes('temperature') && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="number" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Temp. min °C" value={item.temperature_min || ''} onChange={e => updateItem(idx, 'temperature_min', e.target.value)} />
+                        <input type="number" className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Temp. max °C" value={item.temperature_max || ''} onChange={e => updateItem(idx, 'temperature_max', e.target.value)} />
+                      </div>
+                    )}
+                    {(item.checks || []).includes('quantite') && (
+                      <input type="number" className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs" placeholder="Seuil minimum" value={item.seuil_min || ''} onChange={e => updateItem(idx, 'seuil_min', e.target.value)} />
+                    )}
+                  </div>
+                )}
               </div>
             ))}
             {items.length === 0 && <p className="text-sm text-gray-400 text-center py-4">Aucun point ajouté</p>}
@@ -207,6 +224,14 @@ export default function DashboardPage() {
   const [historique, setHistorique] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalModele, setModalModele] = useState(null);
+
+  const dupliquerModele = async (id) => {
+    try {
+      await api.post(`/modeles/${id}/dupliquer`);
+      toast.success('Vérification dupliquée');
+      loadModeles();
+    } catch { toast.error('Erreur lors de la duplication'); }
+  };
   const [showNew, setShowNew] = useState(false);
   const [filtreModeles, setFiltreModeles] = useState([]);
   const [filtreDateDebut, setFiltreDateDebut] = useState('');
@@ -414,6 +439,7 @@ export default function DashboardPage() {
                     <p className="text-xs text-gray-400 mt-1 capitalize">{m.periodicite.replace('_', ' ')} {m.heure_limite && `· avant ${m.heure_limite}`}</p>
                   </div>
                   <div className="flex gap-1">
+                    <button onClick={() => dupliquerModele(m.id)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" title="Dupliquer"><Copy size={15} /></button>
                     <button onClick={async () => { const { data } = await api.get(`/modeles/${m.id}`); setModalModele(data); }} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500"><Edit2 size={15} /></button>
                     {isAdmin() && <button onClick={() => supprimerModele(m.id, m.nom)} className="p-1.5 hover:bg-red-50 rounded-lg text-red-500"><Trash2 size={15} /></button>}
                   </div>
